@@ -2,7 +2,7 @@
 pool:
   vmImage: 'windows-latest'
 
-name: $(Release).$(Rev:.r)
+name: $(Release)$(Rev:.r)
 
 steps:
   - task: DownloadGitHubRelease@0
