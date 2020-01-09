@@ -5,7 +5,7 @@ variables:
   modulePath: "$(GOPATH)/src/github.com/$(build.repository.name)" # Path to the module's code
 
 steps:
-  - template: build/azure-pipelines/go-env.yaml
+  - template: go-env.yaml
   - script: "go run build/build.go -os windows"
     workingDirectory: "$(modulePath)"
   - script: "ls -la"
