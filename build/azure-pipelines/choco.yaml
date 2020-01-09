@@ -1,6 +1,8 @@
 variables:
   RELEASE: 2.9
-
+pool:
+  vmImage: 'windows-latest'
+  
 steps:
   - task: DownloadGitHubRelease@0
     inputs:
