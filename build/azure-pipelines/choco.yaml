@@ -12,10 +12,13 @@ steps:
       defaultVersionType: "v$(Release)"
       itemPattern: 'dnscontrol.exe'
       downloadPath: '.'
+  - script: "choco pack --version=$(Release) --outdir=$(Build.ArtifactStagingDirectory)"
+    displayName: "Choco pack"
   - script: |
-      choco pack --version=$(Release) --outdir=$(Build.ArtifactStagingDirectory)
       choco apikey -k $(CHOCO_API) -source https://push.chocolatey.org/
-    displayName: "Choco pack and push"
+      choco push -s https://push.chocolatey.org/
+    displayName: "Choco Push"
+    workingDirectory: $(Build.ArtifactStagingDirectory)
   
   - task: PublishBuildArtifacts@1
     inputs:
