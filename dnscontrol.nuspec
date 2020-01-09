@@ -7,7 +7,7 @@
     <title>DnsControl</title>
     <authors>Stack Overflow</authors>
     <projectUrl>https://github.com/stackexchange/dnscontrol</projectUrl>
-    <copyright>2020</copyright>
+    <copyright>2016-2020</copyright>
     <licenseUrl>https://github.com/StackExchange/dnscontrol/blob/master/LICENSE</licenseUrl>
     <requireLicenseAcceptance>true</requireLicenseAcceptance>
     <packageSourceUrl>https://github.com/stackexchange/dnscontrol</packageSourceUrl>
@@ -21,6 +21,7 @@
   </metadata>
   <files>
     <file src="dnscontrol.exe" target="tools" />
-    <!--Building from Linux? You may need this instead: <file src="tools/**" target="tools" />-->
+    <file src="LICENSE*" target="" />
+    <file src="VERIFICATION.txt*" target="" />
   </files>
 </package>
