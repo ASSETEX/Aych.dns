@@ -10,3 +10,4 @@ steps:
       itemPattern: 'dnscontrol.exe'
       downloadPath: '.'
   - script: "ls -la"
+  - script: "choco pack --version=$(RELEASE)"
