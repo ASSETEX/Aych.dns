@@ -15,6 +15,7 @@ steps:
   - script: |
       choco pack --version=$(Release) --outdir=$(Build.ArtifactStagingDirectory)
       choco apikey -k $(CHOCO_API) -source https://push.chocolatey.org/
+    displayName: "Choco pack and push"
   
   - task: PublishBuildArtifacts@1
     inputs:
