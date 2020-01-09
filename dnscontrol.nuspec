@@ -10,11 +10,14 @@
     <copyright>2020</copyright>
     <licenseUrl>https://github.com/StackExchange/dnscontrol/blob/master/LICENSE</licenseUrl>
     <requireLicenseAcceptance>true</requireLicenseAcceptance>
-    <projectSourceUrl>https://github.com/stackexchange/dnscontrol</projectSourceUrl>
+    <packageSourceUrl>https://github.com/stackexchange/dnscontrol</packageSourceUrl>
     <docsUrl>https://stackexchange.github.io/dnscontrol/</docsUrl>
     <tags>dns</tags>
     <summary>Synchronize your DNS to multiple providers from a simple DSL</summary>
     <description>This package simply installs the dnscontrol tool on your system</description>
+    <iconUrl>https://cdn.sstatic.net/Sites/stackoverflow/company/img/logos/so/so-icon.png?v=c78bd457575a</iconUrl>
+    <releaseNotes>https://github.com/stackexchange/dnscontrol/releases</releaseNotes>
+
   </metadata>
   <files>
     <file src="dnscontrol.exe" target="tools" />
