@@ -12,7 +12,7 @@ steps:
       itemPattern: 'dnscontrol.exe'
       downloadPath: '.'
   - script: "ls -la"
-  - script: "choco pack --version=$(RELEASE) --outdir=$(Build.ArtifactStagingDirectory)"
+  - script: "choco pack --version=$(Release) --outdir=$(Build.ArtifactStagingDirectory)"
   - task: PublishBuildArtifacts@1
     inputs:
       PathtoPublish: '$(Build.ArtifactStagingDirectory)'
