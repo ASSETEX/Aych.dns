@@ -1,11 +1,12 @@
 variables:
-  GOBIN: "$(GOPATH)/bin" # Go binaries path
-  GOROOT: "/usr/local/go1.13" # Go installation path
-  GOPATH: "$(system.defaultWorkingDirectory)/gopath" # Go workspace path
-  modulePath: "$(GOPATH)/src/github.com/$(build.repository.name)" # Path to the module's code
+  RELEASE: 2.9
 
 steps:
-  - template: go-env.yaml
-  - script: "go run build/build.go -os windows"
-    workingDirectory: "$(modulePath)"
+  - task: DownloadGitHubRelease@0
+    inputs:
+      connection: 'captncraig'
+      userRepository: 'StackExchange/dnscontrol'
+      defaultVersionType: "v$(RELEASE)"
+      itemPattern: 'dnscontrol.exe'
+      downloadPath: '.'
   - script: "ls -la"
