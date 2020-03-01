@@ -4,17 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-
-	"github.com/StackExchange/dnscontrol/models"
-	"github.com/StackExchange/dnscontrol/pkg/printer"
-	"github.com/StackExchange/dnscontrol/providers"
-	"github.com/StackExchange/dnscontrol/providers/diff"
-	"github.com/pkg/errors"
-
 	"strings"
 
 	gandidomain "github.com/prasmussen/gandi-api/domain"
 	gandirecord "github.com/prasmussen/gandi-api/domain/zone/record"
+
+	"github.com/StackExchange/dnscontrol/v2/models"
+	"github.com/StackExchange/dnscontrol/v2/pkg/printer"
+	"github.com/StackExchange/dnscontrol/v2/providers"
+	"github.com/StackExchange/dnscontrol/v2/providers/diff"
 )
 
 /*
@@ -26,6 +24,8 @@ Info required in `creds.json`:
 
 */
 
+var deprecationWarned bool
+
 var features = providers.DocumentationNotes{
 	providers.CanUseCAA:              providers.Can(),
 	providers.CanUsePTR:              providers.Can(),
@@ -33,6 +33,7 @@ var features = providers.DocumentationNotes{
 	providers.CantUseNOPURGE:         providers.Cannot(),
 	providers.DocCreateDomains:       providers.Cannot("Can only manage domains registered through their service"),
 	providers.DocOfficiallySupported: providers.Cannot(),
+	providers.CanGetZones:            providers.Unimplemented(),
 }
 
 func init() {
@@ -58,7 +59,7 @@ func (c *GandiApi) getDomainInfo(domain string) (*gandidomain.DomainInfo, error)
 	}
 	_, ok := c.domainIndex[domain]
 	if !ok {
-		return nil, errors.Errorf("%s not listed in zones for gandi account", domain)
+		return nil, fmt.Errorf("'%s' not a zone in gandi account", domain)
 	}
 	return c.fetchDomainInfo(domain)
 }
@@ -74,6 +75,14 @@ func (c *GandiApi) GetNameservers(domain string) ([]*models.Nameserver, error) {
 		ns = append(ns, &models.Nameserver{Name: nsname})
 	}
 	return ns, nil
+}
+
+// GetZoneRecords gets the records of a zone and returns them in RecordConfig format.
+func (client *GandiApi) GetZoneRecords(domain string) (models.Records, error) {
+	return nil, fmt.Errorf("not implemented")
+	// This enables the get-zones subcommand.
+	// Implement this by extracting the code from GetDomainCorrections into
+	// a single function.  For most providers this should be relatively easy.
 }
 
 // GetDomainCorrections returns a list of corrections recommended for this domain.
@@ -96,7 +105,7 @@ func (c *GandiApi) GetDomainCorrections(dc *models.DomainConfig) ([]*models.Corr
 			rec.TTL = 300
 		}
 		if rec.TTL > 2592000 {
-			return nil, errors.Errorf("ERROR: Gandi does not support TTLs > 30 days (TTL=%d)", rec.TTL)
+			return nil, fmt.Errorf("ERROR: Gandi does not support TTLs > 30 days (TTL=%d)", rec.TTL)
 		}
 		if rec.Type == "TXT" {
 			rec.SetTarget("\"" + rec.GetTargetField() + "\"") // FIXME(tlim): Should do proper quoting.
@@ -165,10 +174,14 @@ func newReg(conf map[string]string) (providers.Registrar, error) {
 }
 
 func newGandi(m map[string]string, metadata json.RawMessage) (*GandiApi, error) {
+	if !deprecationWarned {
+		deprecationWarned = true
+		fmt.Printf("WARNING: GANDI is deprecated and will disappear in 3.0. Please migrate to GANDI_V5.\n")
+	}
 	api := &GandiApi{}
 	api.ApiKey = m["apikey"]
 	if api.ApiKey == "" {
-		return nil, errors.Errorf("missing Gandi apikey")
+		return nil, fmt.Errorf("missing Gandi apikey")
 	}
 
 	return api, nil

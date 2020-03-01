@@ -2,20 +2,18 @@ package main
 
 import (
 	"flag"
-	"testing"
-
 	"fmt"
-
 	"strconv"
 	"strings"
+	"testing"
 
-	"github.com/StackExchange/dnscontrol/models"
-	"github.com/StackExchange/dnscontrol/pkg/nameservers"
-	"github.com/StackExchange/dnscontrol/providers"
-	_ "github.com/StackExchange/dnscontrol/providers/_all"
-	"github.com/StackExchange/dnscontrol/providers/config"
 	"github.com/miekg/dns/dnsutil"
-	"github.com/pkg/errors"
+
+	"github.com/StackExchange/dnscontrol/v2/models"
+	"github.com/StackExchange/dnscontrol/v2/pkg/nameservers"
+	"github.com/StackExchange/dnscontrol/v2/providers"
+	_ "github.com/StackExchange/dnscontrol/v2/providers/_all"
+	"github.com/StackExchange/dnscontrol/v2/providers/config"
 )
 
 var providerToRun = flag.String("provider", "", "Provider to run")
@@ -122,7 +120,7 @@ func runTests(t *testing.T, prv providers.DNSServiceProvider, domainName string,
 			// get corrections for first time
 			corrections, err := prv.GetDomainCorrections(dom)
 			if err != nil {
-				t.Fatal(errors.Wrap(err, "runTests"))
+				t.Fatal(fmt.Errorf("runTests: %w", err))
 			}
 			if !skipVal && i != *startIdx && len(corrections) == 0 {
 				if tst.Desc != "Empty" {
@@ -181,7 +179,7 @@ func TestDualProviders(t *testing.T) {
 	run()
 	// add bogus nameservers
 	dc.Records = []*models.RecordConfig{}
-	dc.Nameservers = append(dc.Nameservers, models.StringsToNameservers([]string{"ns1.otherdomain.tld", "ns2.otherdomain.tld"})...)
+	dc.Nameservers = append(dc.Nameservers, models.StringsToNameservers([]string{"ns1.example.com", "ns2.example.com"})...)
 	nameservers.AddNSRecords(dc)
 	t.Log("Adding nameservers from another provider")
 	run()
@@ -408,7 +406,7 @@ func makeTests(t *testing.T) []*TestCase {
 	}
 
 	// PTR
-	if !providers.ProviderHasCabability(*providerToRun, providers.CanUsePTR) {
+	if !providers.ProviderHasCapability(*providerToRun, providers.CanUsePTR) {
 		t.Log("Skipping PTR Tests because provider does not support them")
 	} else {
 		tests = append(tests, tc("Empty"),
@@ -418,7 +416,7 @@ func makeTests(t *testing.T) []*TestCase {
 	}
 
 	// ALIAS
-	if !providers.ProviderHasCabability(*providerToRun, providers.CanUseAlias) {
+	if !providers.ProviderHasCapability(*providerToRun, providers.CanUseAlias) {
 		t.Log("Skipping ALIAS Tests because provider does not support them")
 	} else {
 		tests = append(tests, tc("Empty"),
@@ -429,7 +427,7 @@ func makeTests(t *testing.T) []*TestCase {
 	}
 
 	// NAPTR
-	if !providers.ProviderHasCabability(*providerToRun, providers.CanUseNAPTR) {
+	if !providers.ProviderHasCapability(*providerToRun, providers.CanUseNAPTR) {
 		t.Log("Skipping NAPTR Tests because provider does not support them")
 	} else {
 		tests = append(tests, tc("Empty"),
@@ -446,7 +444,7 @@ func makeTests(t *testing.T) []*TestCase {
 	}
 
 	// SRV
-	if !providers.ProviderHasCabability(*providerToRun, providers.CanUseSRV) {
+	if !providers.ProviderHasCapability(*providerToRun, providers.CanUseSRV) {
 		t.Log("Skipping SRV Tests because provider does not support them")
 	} else {
 		tests = append(tests, tc("Empty"),
@@ -459,7 +457,7 @@ func makeTests(t *testing.T) []*TestCase {
 			tc("Change Weight", srv("_sip._tcp", 52, 62, 7, "foo.com."), srv("_sip._tcp", 15, 65, 75, "foo4.com.")),
 			tc("Change Port", srv("_sip._tcp", 52, 62, 72, "foo.com."), srv("_sip._tcp", 15, 65, 75, "foo4.com.")),
 		)
-		if *providerToRun == "NAMEDOTCOM" {
+		if *providerToRun == "NAMEDOTCOM" || *providerToRun == "HEXONET" || *providerToRun == "EXOSCALE" {
 			t.Log("Skipping SRV Null Target test because provider does not support them")
 		} else {
 			tests = append(tests, tc("Null Target", srv("_sip._tcp", 52, 62, 72, "foo.com."), srv("_sip._tcp", 15, 65, 75, ".")))
@@ -467,7 +465,7 @@ func makeTests(t *testing.T) []*TestCase {
 	}
 
 	// SSHFP
-	if !providers.ProviderHasCabability(*providerToRun, providers.CanUseSSHFP) {
+	if !providers.ProviderHasCapability(*providerToRun, providers.CanUseSSHFP) {
 		t.Log("Skipping SSHFP Tests because provider does not support them")
 	} else {
 		tests = append(tests, tc("Empty"),
@@ -490,21 +488,28 @@ func makeTests(t *testing.T) []*TestCase {
 	}
 
 	// CAA
-	if !providers.ProviderHasCabability(*providerToRun, providers.CanUseCAA) {
+	if !providers.ProviderHasCapability(*providerToRun, providers.CanUseCAA) {
 		t.Log("Skipping CAA Tests because provider does not support them")
 	} else {
+		manyRecordsTc := tc("CAA many records", caa("@", "issue", 0, "letsencrypt.org"), caa("@", "issuewild", 0, ";"), caa("@", "iodef", 128, "mailto:test@example.com"))
+
+		// Digitalocean doesn't support ";" as value for CAA records
+		if *providerToRun == "DIGITALOCEAN" {
+			manyRecordsTc = tc("CAA many records", caa("@", "issue", 0, "letsencrypt.org"), caa("@", "issuewild", 0, "comodoca.com"), caa("@", "iodef", 128, "mailto:test@example.com"))
+		}
+
 		tests = append(tests, tc("Empty"),
 			tc("CAA record", caa("@", "issue", 0, "letsencrypt.org")),
 			tc("CAA change tag", caa("@", "issuewild", 0, "letsencrypt.org")),
 			tc("CAA change target", caa("@", "issuewild", 0, "example.com")),
 			tc("CAA change flag", caa("@", "issuewild", 128, "example.com")),
-			tc("CAA many records", caa("@", "issue", 0, "letsencrypt.org"), caa("@", "issuewild", 0, ";"), caa("@", "iodef", 128, "mailto:test@example.com")),
+			manyRecordsTc,
 			tc("CAA delete", caa("@", "issue", 0, "letsencrypt.org")),
 		)
 	}
 
 	// TLSA
-	if !providers.ProviderHasCabability(*providerToRun, providers.CanUseTLSA) {
+	if !providers.ProviderHasCapability(*providerToRun, providers.CanUseTLSA) {
 		t.Log("Skipping TLSA Tests because provider does not support them")
 	} else {
 		sha256hash := strings.Repeat("0123456789abcdef", 4)
@@ -521,7 +526,6 @@ func makeTests(t *testing.T) []*TestCase {
 
 	// Case
 	tests = append(tests, tc("Empty"),
-		tc("Empty"),
 		tc("Create CAPS", mx("BAR", 5, "BAR.com.")),
 		tc("Downcase label", mx("bar", 5, "BAR.com."), a("decoy", "1.1.1.1")),
 		tc("Downcase target", mx("bar", 5, "bar.com."), a("decoy", "2.2.2.2")),
@@ -551,7 +555,6 @@ func makeTests(t *testing.T) []*TestCase {
 
 	// TXT (single)
 	tests = append(tests, tc("Empty"),
-		tc("Empty"),
 		tc("Create a TXT", txt("foo", "simple")),
 		tc("Change a TXT", txt("foo", "changed")),
 		tc("Empty"),
@@ -562,12 +565,24 @@ func makeTests(t *testing.T) []*TestCase {
 		tc("Create a 255-byte TXT", txt("foo", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")),
 	)
 
+	// FUTURE(tal): https://github.com/StackExchange/dnscontrol/issues/598
+	// We decided that handling an empty TXT string is not a
+	// requirement. In the future we might make it a "capability" to
+	// indicate which vendors fully support RFC 1035, which requires
+	// that a TXT string can be empty.
+	//
+	//	// TXT (empty)
+	//	if (provider supports empty txt strings) {
+	//		tests = append(tests, tc("Empty"),
+	//			tc("TXT with empty str", txt("foo1", "")),
+	//		)
+	//	}
+
 	// TXTMulti
-	if !providers.ProviderHasCabability(*providerToRun, providers.CanUseTXTMulti) {
+	if !providers.ProviderHasCapability(*providerToRun, providers.CanUseTXTMulti) {
 		t.Log("Skipping TXTMulti Tests because provider does not support them")
 	} else {
-		tests = append(tests,
-			tc("Empty"),
+		tests = append(tests, tc("Empty"),
 			tc("Create TXTMulti 1",
 				txtmulti("foo1", []string{"simple"}),
 			),
@@ -594,25 +609,22 @@ func makeTests(t *testing.T) []*TestCase {
 			tc("3x255-byte TXTMulti",
 				txtmulti("foo3", []string{"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", "YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY", "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ"}),
 			),
-			tc("Empty"),
 		)
 	}
 
 	// ignored records
-	tests = append(tests,
-		tc("Empty"),
+	tests = append(tests, tc("Empty"),
 		tc("Create some records", txt("foo", "simple"), a("foo", "1.2.3.4")),
 		tc("Add a new record - ignoring foo", a("bar", "1.2.3.4"), ignore("foo")),
 	)
 
-	tests = append(tests,
-		tc("Empty"),
+	tests = append(tests, tc("Empty"),
 		tc("Create some records", txt("bar.foo", "simple"), a("bar.foo", "1.2.3.4")),
 		tc("Add a new record - ignoring *.foo", a("bar", "1.2.3.4"), ignore("*.foo")),
 	)
 
 	// R53_ALIAS
-	if !providers.ProviderHasCabability(*providerToRun, providers.CanUseRoute53Alias) {
+	if !providers.ProviderHasCapability(*providerToRun, providers.CanUseRoute53Alias) {
 		t.Log("Skipping Route53 ALIAS Tests because provider does not support them")
 	} else {
 		tests = append(tests, tc("Empty"),
@@ -624,13 +636,12 @@ func makeTests(t *testing.T) []*TestCase {
 
 	// test r53 for very very large batch sizes
 	if *providerToRun == "ROUTE53" {
-		tests = append(tests,
+		tests = append(tests, tc("Empty"),
 			tc("600 records", manyA("rec%04d", "1.2.3.4", 600)...),
 			tc("Update 600 records", manyA("rec%04d", "1.2.3.5", 600)...),
 			tc("Empty"),
 			tc("1200 records", manyA("rec%04d", "1.2.3.4", 1200)...),
 			tc("Update 1200 records", manyA("rec%04d", "1.2.3.5", 1200)...),
-			tc("Empty"),
 		)
 	}
 

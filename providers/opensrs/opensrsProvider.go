@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/StackExchange/dnscontrol/models"
-	"github.com/StackExchange/dnscontrol/providers"
+	"github.com/StackExchange/dnscontrol/v2/models"
+	"github.com/StackExchange/dnscontrol/v2/providers"
 
 	opensrs "github.com/philhug/opensrs-go/opensrs"
 )
@@ -17,6 +17,7 @@ var docNotes = providers.DocumentationNotes{
 	providers.DocCreateDomains:       providers.Cannot(),
 	providers.DocOfficiallySupported: providers.Cannot(),
 	providers.CanUseTLSA:             providers.Cannot(),
+	providers.CanGetZones:            providers.Unimplemented(),
 }
 
 func init() {

@@ -7,16 +7,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/StackExchange/dnscontrol/models"
-	"github.com/StackExchange/dnscontrol/pkg/printer"
-	"github.com/StackExchange/dnscontrol/providers"
-	"github.com/StackExchange/dnscontrol/providers/diff"
 	"github.com/google/uuid"
-	"github.com/pkg/errors"
 	gandiclient "github.com/prasmussen/gandi-api/client"
 	gandilivedomain "github.com/prasmussen/gandi-api/live_dns/domain"
 	gandiliverecord "github.com/prasmussen/gandi-api/live_dns/record"
 	gandilivezone "github.com/prasmussen/gandi-api/live_dns/zone"
+
+	"github.com/StackExchange/dnscontrol/v2/models"
+	"github.com/StackExchange/dnscontrol/v2/pkg/printer"
+	"github.com/StackExchange/dnscontrol/v2/providers"
+	"github.com/StackExchange/dnscontrol/v2/providers/diff"
 )
 
 var liveFeatures = providers.DocumentationNotes{
@@ -36,7 +36,7 @@ func init() {
 func newLiveDsp(m map[string]string, metadata json.RawMessage) (providers.DNSServiceProvider, error) {
 	APIKey := m["apikey"]
 	if APIKey == "" {
-		return nil, errors.Errorf("missing Gandi apikey")
+		return nil, fmt.Errorf("missing Gandi apikey")
 	}
 
 	return newLiveClient(APIKey), nil
@@ -74,7 +74,7 @@ func (c *liveClient) GetNameservers(domain string) ([]*models.Nameserver, error)
 	domains := []string{}
 	response, err := c.client.Get("/nameservers/"+domain, &domains)
 	if err != nil {
-		return nil, errors.Errorf("failed to get nameservers for domain %s", domain)
+		return nil, fmt.Errorf("failed to get nameservers for domain %s", domain)
 	}
 	defer response.Body.Close()
 
@@ -83,6 +83,14 @@ func (c *liveClient) GetNameservers(domain string) ([]*models.Nameserver, error)
 		ns = append(ns, &models.Nameserver{Name: domain})
 	}
 	return ns, nil
+}
+
+// GetZoneRecords gets the records of a zone and returns them in RecordConfig format.
+func (client *liveClient) GetZoneRecords(domain string) (models.Records, error) {
+	return nil, fmt.Errorf("not implemented")
+	// This enables the get-zones subcommand.
+	// Implement this by extracting the code from GetDomainCorrections into
+	// a single function.  For most providers this should be relatively easy.
 }
 
 // GetDomainCorrections returns a list of corrections recommended for this domain.
@@ -201,7 +209,7 @@ func (c *liveClient) recordConfigFromInfo(infos []*gandiliverecord.Info, origin 
 			}
 			err := rc.SetTargetTXTs(parsed)
 			if err != nil {
-				panic(errors.Wrapf(err, "recordConfigFromInfo=TXT failed"))
+				panic(fmt.Errorf("recordConfigFromInfo=TXT failed: %w", err))
 			}
 			rcs = append(rcs, rc)
 		} else {
@@ -218,7 +226,7 @@ func (c *liveClient) recordConfigFromInfo(infos []*gandiliverecord.Info, origin 
 				default:
 					err := rc.PopulateFromString(rtype, value, origin)
 					if err != nil {
-						panic(errors.Wrapf(err, "recordConfigFromInfo failed"))
+						panic(fmt.Errorf("recordConfigFromInfo failed: %w", err))
 					}
 				}
 				rcs = append(rcs, rc)
@@ -240,7 +248,7 @@ func (c *liveClient) recordsToInfo(records models.Records) (models.Records, []*g
 			rec.TTL = 300
 		}
 		if rec.TTL > 2592000 {
-			return nil, nil, errors.Errorf("ERROR: Gandi does not support TTLs > 30 days (TTL=%d)", rec.TTL)
+			return nil, nil, fmt.Errorf("ERROR: Gandi does not support TTLs > 30 days (TTL=%d)", rec.TTL)
 		}
 		if rec.Type == "NS" && rec.GetLabel() == "@" {
 			if !strings.HasSuffix(rec.GetTargetField(), ".gandi.net.") {

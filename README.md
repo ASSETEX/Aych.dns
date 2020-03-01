@@ -17,12 +17,14 @@ Currently supported DNS providers:
  - Azure DNS
  - BIND
  - Cloudflare
+ - ClouDNS
  - DigitalOcean
  - DNSimple
  - Exoscale
  - Gandi
  - Google
  - HEXONET
+ - Internet.bs
  - Linode
  - Namecheap
  - Name.com

@@ -7,14 +7,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Azure/go-autorest/autorest/to"
-	"github.com/StackExchange/dnscontrol/models"
-	"github.com/StackExchange/dnscontrol/providers"
-	"github.com/StackExchange/dnscontrol/providers/diff"
-	"github.com/pkg/errors"
-
 	adns "github.com/Azure/azure-sdk-for-go/services/dns/mgmt/2018-05-01/dns"
 	aauth "github.com/Azure/go-autorest/autorest/azure/auth"
+	"github.com/Azure/go-autorest/autorest/to"
+
+	"github.com/StackExchange/dnscontrol/v2/models"
+	"github.com/StackExchange/dnscontrol/v2/providers"
+	"github.com/StackExchange/dnscontrol/v2/providers/diff"
 )
 
 type azureDnsProvider struct {
@@ -54,7 +53,7 @@ var features = providers.DocumentationNotes{
 	providers.CanUseAlias:            providers.Cannot("Only supported for Azure Resources. Not yet implemented"),
 	providers.DocCreateDomains:       providers.Can(),
 	providers.DocDualHost:            providers.Can("Azure does not permit modifying the existing NS records, only adding/removing additional records."),
-	providers.DocOfficiallySupported: providers.Cannot(),
+	providers.DocOfficiallySupported: providers.Can(),
 	providers.CanUsePTR:              providers.Can(),
 	providers.CanUseSRV:              providers.Can(),
 	providers.CanUseTXTMulti:         providers.Can(),
@@ -63,25 +62,37 @@ var features = providers.DocumentationNotes{
 	providers.CanUseNAPTR:            providers.Cannot(),
 	providers.CanUseSSHFP:            providers.Cannot(),
 	providers.CanUseTLSA:             providers.Cannot(),
+	providers.CanGetZones:            providers.Can(),
 }
 
 func init() {
 	providers.RegisterDomainServiceProviderType("AZURE_DNS", newAzureDnsDsp, features)
 }
 
-func (a *azureDnsProvider) getZones() error {
-	a.zones = make(map[string]*adns.Zone)
-
+func (a *azureDnsProvider) getExistingZones() (*adns.ZoneListResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 6000*time.Second)
 	defer cancel()
 	zonesIterator, zonesErr := a.zonesClient.ListByResourceGroupComplete(ctx, *a.resourceGroup, to.Int32Ptr(100))
 	if zonesErr != nil {
-		return zonesErr
+		return nil, zonesErr
 	}
 	zonesResult := zonesIterator.Response()
+	return &zonesResult, nil
+}
+
+func (a *azureDnsProvider) getZones() error {
+	a.zones = make(map[string]*adns.Zone)
+
+	zonesResult, err := a.getExistingZones()
+
+	if err != nil {
+		return err
+	}
+
 	for _, z := range *zonesResult.Value {
+		zone := z
 		domain := strings.TrimSuffix(*z.Name, ".")
-		a.zones[domain] = &z
+		a.zones[domain] = &zone
 	}
 
 	return nil
@@ -101,13 +112,60 @@ func (a *azureDnsProvider) GetNameservers(domain string) ([]*models.Nameserver, 
 		return nil, errNoExist{domain}
 	}
 
-	var ns []*models.Nameserver
+	var nss []string
 	if zone.ZoneProperties != nil {
-		for _, azureNs := range *zone.ZoneProperties.NameServers {
-			ns = append(ns, &models.Nameserver{Name: azureNs})
+		for _, ns := range *zone.ZoneProperties.NameServers {
+			nss = append(nss, ns)
 		}
 	}
-	return ns, nil
+	return models.ToNameserversStripTD(nss)
+}
+
+func (a *azureDnsProvider) ListZones() ([]string, error) {
+	zonesResult, err := a.getExistingZones()
+
+	if err != nil {
+		return nil, err
+	}
+
+	var zones []string
+
+	for _, z := range *zonesResult.Value {
+		domain := strings.TrimSuffix(*z.Name, ".")
+		zones = append(zones, domain)
+	}
+
+	return zones, nil
+}
+
+// GetZoneRecords gets the records of a zone and returns them in RecordConfig format.
+func (a *azureDnsProvider) GetZoneRecords(domain string) (models.Records, error) {
+	existingRecords, _, _, err := a.getExistingRecords(domain)
+	if err != nil {
+		return nil, err
+	}
+	return existingRecords, nil
+}
+
+func (a *azureDnsProvider) getExistingRecords(domain string) (models.Records, []*adns.RecordSet, string, error) {
+	zone, ok := a.zones[domain]
+	if !ok {
+		return nil, nil, "", errNoExist{domain}
+	}
+	var zoneName string
+	zoneName = *zone.Name
+	records, err := a.fetchRecordSets(zoneName)
+	if err != nil {
+		return nil, nil, "", err
+	}
+
+	var existingRecords models.Records
+	for _, set := range records {
+		existingRecords = append(existingRecords, nativeToRecords(set, zoneName)...)
+	}
+
+	models.PostProcessRecords(existingRecords)
+	return existingRecords, records, zoneName, nil
 }
 
 func (a *azureDnsProvider) GetDomainCorrections(dc *models.DomainConfig) ([]*models.Correction, error) {
@@ -118,22 +176,11 @@ func (a *azureDnsProvider) GetDomainCorrections(dc *models.DomainConfig) ([]*mod
 	}
 
 	var corrections []*models.Correction
-	zone, ok := a.zones[dc.Name]
-	if !ok {
-		return nil, errNoExist{dc.Name}
-	}
 
-	records, err := a.fetchRecordSets(zone.Name)
+	existingRecords, records, zoneName, err := a.getExistingRecords(dc.Name)
 	if err != nil {
 		return nil, err
 	}
-
-	var existingRecords []*models.RecordConfig
-	for _, set := range records {
-		existingRecords = append(existingRecords, nativeToRecords(set, dc.Name)...)
-	}
-
-	models.PostProcessRecords(existingRecords)
 
 	differ := diff.New(dc)
 	namesToUpdate := differ.ChangedGroups(existingRecords)
@@ -169,7 +216,7 @@ func (a *azureDnsProvider) GetDomainCorrections(dc *models.DomainConfig) ([]*mod
 						F: func() error {
 							ctx, cancel := context.WithTimeout(context.Background(), 6000*time.Second)
 							defer cancel()
-							_, err := a.recordsClient.Delete(ctx, *a.resourceGroup, *zone.Name, *rrset.Name, nativeToRecordType(rrset.Type), "")
+							_, err := a.recordsClient.Delete(ctx, *a.resourceGroup, zoneName, *rrset.Name, nativeToRecordType(rrset.Type), "")
 							// Artifically slow things down after a delete, as the API can take time to register it. The tests fail if we delete and then recheck too quickly.
 							time.Sleep(25 * time.Millisecond)
 							if err != nil {
@@ -201,7 +248,7 @@ func (a *azureDnsProvider) GetDomainCorrections(dc *models.DomainConfig) ([]*mod
 								F: func() error {
 									ctx, cancel := context.WithTimeout(context.Background(), 6000*time.Second)
 									defer cancel()
-									_, err := a.recordsClient.Delete(ctx, *a.resourceGroup, *zone.Name, recordName, existingRecordType, "")
+									_, err := a.recordsClient.Delete(ctx, *a.resourceGroup, zoneName, recordName, existingRecordType, "")
 									// Artifically slow things down after a delete, as the API can take time to register it. The tests fail if we delete and then recheck too quickly.
 									time.Sleep(25 * time.Millisecond)
 									if err != nil {
@@ -220,7 +267,7 @@ func (a *azureDnsProvider) GetDomainCorrections(dc *models.DomainConfig) ([]*mod
 					F: func() error {
 						ctx, cancel := context.WithTimeout(context.Background(), 6000*time.Second)
 						defer cancel()
-						_, err := a.recordsClient.CreateOrUpdate(ctx, *a.resourceGroup, *zone.Name, recordName, recordType, *rrset, "", "")
+						_, err := a.recordsClient.CreateOrUpdate(ctx, *a.resourceGroup, zoneName, recordName, recordType, *rrset, "", "")
 						// Artifically slow things down after a delete, as the API can take time to register it. The tests fail if we delete and then recheck too quickly.
 						time.Sleep(25 * time.Millisecond)
 						if err != nil {
@@ -258,7 +305,7 @@ func nativeToRecordType(recordType *string) adns.RecordType {
 	case "SOA":
 		return adns.SOA
 	default:
-		panic(errors.Errorf("rc.String rtype %v unimplemented", *recordType))
+		panic(fmt.Errorf("rc.String rtype %v unimplemented", *recordType))
 	}
 }
 
@@ -266,20 +313,24 @@ func nativeToRecords(set *adns.RecordSet, origin string) []*models.RecordConfig 
 	var results []*models.RecordConfig
 	switch rtype := *set.Type; rtype {
 	case "Microsoft.Network/dnszones/A":
-		for _, rec := range *set.ARecords {
-			rc := &models.RecordConfig{TTL: uint32(*set.TTL)}
-			rc.SetLabelFromFQDN(*set.Fqdn, origin)
-			rc.Type = "A"
-			_ = rc.SetTarget(*rec.Ipv4Address)
-			results = append(results, rc)
+		if set.ARecords != nil {
+			for _, rec := range *set.ARecords {
+				rc := &models.RecordConfig{TTL: uint32(*set.TTL)}
+				rc.SetLabelFromFQDN(*set.Fqdn, origin)
+				rc.Type = "A"
+				_ = rc.SetTarget(*rec.Ipv4Address)
+				results = append(results, rc)
+			}
 		}
 	case "Microsoft.Network/dnszones/AAAA":
-		for _, rec := range *set.AaaaRecords {
-			rc := &models.RecordConfig{TTL: uint32(*set.TTL)}
-			rc.SetLabelFromFQDN(*set.Fqdn, origin)
-			rc.Type = "AAAA"
-			_ = rc.SetTarget(*rec.Ipv6Address)
-			results = append(results, rc)
+		if set.AaaaRecords != nil {
+			for _, rec := range *set.AaaaRecords {
+				rc := &models.RecordConfig{TTL: uint32(*set.TTL)}
+				rc.SetLabelFromFQDN(*set.Fqdn, origin)
+				rc.Type = "AAAA"
+				_ = rc.SetTarget(*rec.Ipv6Address)
+				results = append(results, rc)
+			}
 		}
 	case "Microsoft.Network/dnszones/CNAME":
 		rc := &models.RecordConfig{TTL: uint32(*set.TTL)}
@@ -304,12 +355,20 @@ func nativeToRecords(set *adns.RecordSet, origin string) []*models.RecordConfig 
 			results = append(results, rc)
 		}
 	case "Microsoft.Network/dnszones/TXT":
-		for _, rec := range *set.TxtRecords {
+		if len(*set.TxtRecords) == 0 { // Empty String Record Parsing
 			rc := &models.RecordConfig{TTL: uint32(*set.TTL)}
 			rc.SetLabelFromFQDN(*set.Fqdn, origin)
 			rc.Type = "TXT"
-			_ = rc.SetTargetTXTs(*rec.Value)
+			_ = rc.SetTargetTXT("")
 			results = append(results, rc)
+		} else {
+			for _, rec := range *set.TxtRecords {
+				rc := &models.RecordConfig{TTL: uint32(*set.TTL)}
+				rc.SetLabelFromFQDN(*set.Fqdn, origin)
+				rc.Type = "TXT"
+				_ = rc.SetTargetTXTs(*rec.Value)
+				results = append(results, rc)
+			}
 		}
 	case "Microsoft.Network/dnszones/MX":
 		for _, rec := range *set.MxRecords {
@@ -337,7 +396,7 @@ func nativeToRecords(set *adns.RecordSet, origin string) []*models.RecordConfig 
 		}
 	case "Microsoft.Network/dnszones/SOA":
 	default:
-		panic(errors.Errorf("rc.String rtype %v unimplemented", *set.Type))
+		panic(fmt.Errorf("rc.String rtype %v unimplemented", *set.Type))
 	}
 	return results
 }
@@ -372,7 +431,10 @@ func recordToNative(recordKey models.RecordKey, recordConfig []*models.RecordCon
 			if recordSet.TxtRecords == nil {
 				recordSet.TxtRecords = &[]adns.TxtRecord{}
 			}
-			*recordSet.TxtRecords = append(*recordSet.TxtRecords, adns.TxtRecord{Value: &rec.TxtStrings})
+			// Empty TXT record needs to have no value set in it's properties
+			if !(len(rec.TxtStrings) == 1 && rec.TxtStrings[0] == "") {
+				*recordSet.TxtRecords = append(*recordSet.TxtRecords, adns.TxtRecord{Value: &rec.TxtStrings})
+			}
 		case "MX":
 			if recordSet.MxRecords == nil {
 				recordSet.MxRecords = &[]adns.MxRecord{}
@@ -389,20 +451,20 @@ func recordToNative(recordKey models.RecordKey, recordConfig []*models.RecordCon
 			}
 			*recordSet.CaaRecords = append(*recordSet.CaaRecords, adns.CaaRecord{Value: to.StringPtr(rec.Target), Tag: to.StringPtr(rec.CaaTag), Flags: to.Int32Ptr(int32(rec.CaaFlag))})
 		default:
-			panic(errors.Errorf("rc.String rtype %v unimplemented", recordKey.Type))
+			panic(fmt.Errorf("rc.String rtype %v unimplemented", recordKey.Type))
 		}
 	}
 	return recordSet, nativeToRecordType(to.StringPtr(recordKey.Type))
 }
 
-func (a *azureDnsProvider) fetchRecordSets(zoneName *string) ([]*adns.RecordSet, error) {
-	if zoneName == nil || *zoneName == "" {
+func (a *azureDnsProvider) fetchRecordSets(zoneName string) ([]*adns.RecordSet, error) {
+	if zoneName == "" {
 		return nil, nil
 	}
 	var records []*adns.RecordSet
 	ctx, cancel := context.WithTimeout(context.Background(), 6000*time.Second)
 	defer cancel()
-	recordsIterator, recordsErr := a.recordsClient.ListAllByDNSZoneComplete(ctx, *a.resourceGroup, *zoneName, to.Int32Ptr(1000), "")
+	recordsIterator, recordsErr := a.recordsClient.ListAllByDNSZoneComplete(ctx, *a.resourceGroup, zoneName, to.Int32Ptr(1000), "")
 	if recordsErr != nil {
 		return nil, recordsErr
 	}

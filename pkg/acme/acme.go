@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/StackExchange/dnscontrol/models"
-	"github.com/StackExchange/dnscontrol/pkg/nameservers"
-	"github.com/StackExchange/dnscontrol/pkg/notifications"
+	"github.com/StackExchange/dnscontrol/v2/models"
+	"github.com/StackExchange/dnscontrol/v2/pkg/nameservers"
+	"github.com/StackExchange/dnscontrol/v2/pkg/notifications"
 	"github.com/go-acme/lego/certcrypto"
 	"github.com/go-acme/lego/certificate"
 	"github.com/go-acme/lego/challenge"
@@ -152,9 +152,7 @@ func (c *certManager) IssueOrRenewCert(cfg *CertConfig, renewUnder int, verbose 
 	}
 	client.Challenge.Remove(challenge.HTTP01)
 	client.Challenge.Remove(challenge.TLSALPN01)
-	client.Challenge.SetDNS01Provider(c)
-
-	dns01.WrapPreCheck(c.preCheckDNS)
+	client.Challenge.SetDNS01Provider(c, dns01.WrapPreCheck(c.preCheckDNS))
 
 	certResource, err := action()
 	if err != nil {

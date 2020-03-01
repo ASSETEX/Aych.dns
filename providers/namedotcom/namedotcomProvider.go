@@ -3,10 +3,11 @@ package namedotcom
 
 import (
 	"encoding/json"
+	"fmt"
 
-	"github.com/StackExchange/dnscontrol/providers"
 	"github.com/namedotcom/go/namecom"
-	"github.com/pkg/errors"
+
+	"github.com/StackExchange/dnscontrol/v2/providers"
 )
 
 const defaultAPIBase = "api.name.com"
@@ -27,6 +28,7 @@ var features = providers.DocumentationNotes{
 	providers.DocCreateDomains:       providers.Cannot("New domains require registration"),
 	providers.DocDualHost:            providers.Cannot("Apex NS records not editable"),
 	providers.DocOfficiallySupported: providers.Can(),
+	providers.CanGetZones:            providers.Can(),
 }
 
 func newReg(conf map[string]string) (providers.Registrar, error) {
@@ -44,7 +46,7 @@ func newProvider(conf map[string]string) (*NameCom, error) {
 	api.client.Server = conf["apiurl"]
 	api.APIUser, api.APIKey, api.APIUrl = conf["apiuser"], conf["apikey"], conf["apiurl"]
 	if api.APIKey == "" || api.APIUser == "" {
-		return nil, errors.Errorf("missing Name.com apikey or apiuser")
+		return nil, fmt.Errorf("missing Name.com apikey or apiuser")
 	}
 	if api.APIUrl == "" {
 		api.APIUrl = defaultAPIBase

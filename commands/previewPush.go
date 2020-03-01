@@ -5,15 +5,15 @@ import (
 	"log"
 	"os"
 
-	"github.com/StackExchange/dnscontrol/models"
-	"github.com/StackExchange/dnscontrol/pkg/nameservers"
-	"github.com/StackExchange/dnscontrol/pkg/normalize"
-	"github.com/StackExchange/dnscontrol/pkg/notifications"
-	"github.com/StackExchange/dnscontrol/pkg/printer"
-	"github.com/StackExchange/dnscontrol/providers"
-	"github.com/StackExchange/dnscontrol/providers/config"
-	"github.com/pkg/errors"
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v2"
+
+	"github.com/StackExchange/dnscontrol/v2/models"
+	"github.com/StackExchange/dnscontrol/v2/pkg/nameservers"
+	"github.com/StackExchange/dnscontrol/v2/pkg/normalize"
+	"github.com/StackExchange/dnscontrol/v2/pkg/notifications"
+	"github.com/StackExchange/dnscontrol/v2/pkg/printer"
+	"github.com/StackExchange/dnscontrol/v2/providers"
+	"github.com/StackExchange/dnscontrol/v2/providers/config"
 )
 
 var _ = cmd(catMain, func() *cli.Command {
@@ -41,12 +41,12 @@ func (args *PreviewArgs) flags() []cli.Flag {
 	flags := args.GetDNSConfigArgs.flags()
 	flags = append(flags, args.GetCredentialsArgs.flags()...)
 	flags = append(flags, args.FilterArgs.flags()...)
-	flags = append(flags, cli.BoolFlag{
+	flags = append(flags, &cli.BoolFlag{
 		Name:        "notify",
 		Destination: &args.Notify,
 		Usage:       `set to true to send notifications to configured destinations`,
 	})
-	flags = append(flags, cli.BoolFlag{
+	flags = append(flags, &cli.BoolFlag{
 		Name:        "expect-no-changes",
 		Destination: &args.WarnChanges,
 		Usage:       `set to true for non-zero return code if there are changes`,
@@ -74,7 +74,7 @@ type PushArgs struct {
 
 func (args *PushArgs) flags() []cli.Flag {
 	flags := args.PreviewArgs.flags()
-	flags = append(flags, cli.BoolFlag{
+	flags = append(flags, &cli.BoolFlag{
 		Name:        "i",
 		Destination: &args.Interactive,
 		Usage:       "Interactive. Confirm or Exclude each correction before they run",
@@ -101,7 +101,7 @@ func run(args PreviewArgs, push bool, interactive bool, out printer.CLI) error {
 	}
 	errs := normalize.NormalizeAndValidateConfig(cfg)
 	if PrintValidationErrors(errs) {
-		return errors.Errorf("Exiting due to validation errors")
+		return fmt.Errorf("Exiting due to validation errors")
 	}
 	// TODO:
 	notifier, err := InitializeProviders(args.CredsFile, cfg, args.Notify)
@@ -169,10 +169,10 @@ DomainLoop:
 	notifier.Done()
 	out.Printf("Done. %d corrections.\n", totalCorrections)
 	if anyErrors {
-		return errors.Errorf("Completed with errors")
+		return fmt.Errorf("Completed with errors")
 	}
 	if totalCorrections != 0 && args.WarnChanges {
-		return errors.Errorf("There are pending changes")
+		return fmt.Errorf("There are pending changes")
 	}
 	return nil
 }
